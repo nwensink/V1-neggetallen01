@@ -8,38 +8,23 @@
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <!-- CryptoJS voor veiligere wachtwoordvergelijking -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase configuratie
-        const firebaseConfig = {
-            apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
-            authDomain: "neggetallen01.firebaseapp.com",
-            projectId: "neggetallen01",
-            storageBucket: "neggetallen01.firebasestorage.app",
-            messagingSenderId: "475152363257",
-            appId: "1:475152363257:web:7f710c409e3096fc093c28",
-            measurementId: "G-7HDYB84V51"
-        };
-
+        const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = 'negatieve-getallen-app';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'negatieve-getallen-app';
 
         let userName = "";
         let currentQuestionIndex = 0;
         let score = 0;
         let questions = [];
         const TOTAL_QUESTIONS = 10;
-
-        // De SHA256 vingerafdruk van het wachtwoord "meester-check"
-        // Dit is de exacte hash voor die tekst.
-        const ADMIN_HASH = "897365636585149303d8d69784b80753086608518973a901844784b91010373e";
+        const ADMIN_PASSWORD = "meester-check";
 
         function generateNumber(isDecimal) {
             let num = (Math.random() * 200 - 100);
@@ -79,29 +64,25 @@
         }
 
         async function saveScore(finalScore) {
+            if (!auth.currentUser) return;
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'scores'), {
                     name: userName,
                     score: finalScore,
                     timestamp: new Date().toISOString()
                 });
-            } catch (e) { console.error("Database fout:", e); }
+            } catch (e) { console.error(e); }
         }
 
         window.startApp = async () => {
             const nameInput = document.getElementById('nameInput').value.trim();
             if (!nameInput) return;
             userName = nameInput;
-            
-            try {
-                await signInAnonymously(auth);
-                questions = generateQuestions();
-                document.getElementById('start-screen').classList.add('hidden');
-                document.getElementById('game-screen').classList.remove('hidden');
-                showQuestion();
-            } catch (err) {
-                alert("Database verbinding mislukt.");
-            }
+            await signInAnonymously(auth);
+            questions = generateQuestions();
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            showQuestion();
         };
 
         function showQuestion() {
@@ -165,24 +146,18 @@
             document.getElementById('final-score').innerText = `${userName}, je score is ${score} / ${TOTAL_QUESTIONS}`;
             
             if (score === 10) {
-                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                confetti({
+                    particleCount: 150,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
             }
             saveScore(score);
         }
 
         window.toggleAdmin = () => {
             const pw = prompt("Wachtwoord:");
-            if (!pw) return;
-            
-            // Verwijder eventuele spaties aan het begin of eind van de invoer
-            const trimmedPw = pw.trim();
-            const inputHash = CryptoJS.SHA256(trimmedPw).toString();
-            
-            if (inputHash === ADMIN_HASH) {
-                showAdminPanel();
-            } else {
-                alert("Onjuist wachtwoord.");
-            }
+            if (pw === ADMIN_PASSWORD) showAdminPanel();
         };
 
         async function showAdminPanel() {
@@ -191,20 +166,16 @@
             if (!panel.classList.contains('hidden')) {
                 const list = document.getElementById('scores-list');
                 list.innerHTML = "Laden...";
-                try {
-                    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'scores'));
-                    let results = [];
-                    querySnapshot.forEach(doc => results.push(doc.data()));
-                    results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'scores'));
+                let results = [];
+                querySnapshot.forEach(doc => results.push(doc.data()));
+                results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-                    let html = '<table class="w-full text-left mt-2 text-xs"><thead><tr class="border-b"><th>Naam</th><th>Score</th><th>Tijd</th></tr></thead><tbody>';
-                    results.forEach(d => {
-                        html += `<tr class="border-b"><td class="py-1">${d.name}</td><td>${d.score}</td><td>${new Date(d.timestamp).toLocaleDateString()}</td></tr>`;
-                    });
-                    list.innerHTML = html + '</tbody></table>';
-                } catch (e) {
-                    list.innerHTML = "Fout bij ophalen data.";
-                }
+                let html = '<table class="w-full text-left mt-2 text-xs"><thead><tr class="border-b"><th>Naam</th><th>Score</th><th>Tijd</th></tr></thead><tbody>';
+                results.forEach(d => {
+                    html += `<tr class="border-b"><td class="py-1">${d.name}</td><td>${d.score}</td><td>${new Date(d.timestamp).toLocaleDateString()}</td></tr>`;
+                });
+                list.innerHTML = html + '</tbody></table>';
             }
         }
     </script>
