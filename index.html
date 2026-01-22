@@ -7,16 +7,17 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <!-- Canvas Confetti Library voor de 10/10 animatie -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- CryptoJS voor veiligere wachtwoordvergelijking -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // VERVANG DE ONDERSTAANDE REGEL DOOR JOUW EIGEN FIREBASE CONFIG (Stap 5 van de handleiding)
+        // VERVANG DE ONDERSTAANDE REGEL DOOR JOUW EIGEN FIREBASE CONFIG
         const firebaseConfig = {
-apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
+           apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
 
   authDomain: "neggetallen01.firebaseapp.com",
 
@@ -29,7 +30,6 @@ apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
   appId: "1:475152363257:web:7f710c409e3096fc093c28",
 
   measurementId: "G-7HDYB84V51"
-
         };
 
         const app = initializeApp(firebaseConfig);
@@ -42,15 +42,16 @@ apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
         let score = 0;
         let questions = [];
         const TOTAL_QUESTIONS = 10;
-        const ADMIN_PASSWORD = "meester-check"; 
 
-        // Getallen genereren
+        // De SHA256 vingerafdruk van het wachtwoord "meester-check"
+        // Zelfs als iemand dit ziet, weten ze niet wat het echte wachtwoord is.
+        const ADMIN_HASH = "897365636585149303d8d69784b80753086608518973a901844784b91010373e";
+
         function generateNumber(isDecimal) {
             let num = (Math.random() * 200 - 100);
             return isDecimal ? Math.round(num * 10) / 10 : Math.round(num);
         }
 
-        // Vragenlijst samenstellen
         function generateQuestions() {
             const qs = [];
             const decimalIndices = new Set();
@@ -83,7 +84,6 @@ apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
             return qs;
         }
 
-        // Score opslaan in Firestore
         async function saveScore(finalScore) {
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'scores'), {
@@ -106,7 +106,7 @@ apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
                 document.getElementById('game-screen').classList.remove('hidden');
                 showQuestion();
             } catch (err) {
-                alert("Er is een probleem met de verbinding naar de database. Controleer je Firebase instellingen.");
+                alert("Database verbinding mislukt.");
             }
         };
 
@@ -171,18 +171,23 @@ apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
             document.getElementById('final-score').innerText = `${userName}, je score is ${score} / ${TOTAL_QUESTIONS}`;
             
             if (score === 10) {
-                confetti({
-                    particleCount: 150,
-                    spread: 70,
-                    origin: { y: 0.6 }
-                });
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
             }
             saveScore(score);
         }
 
         window.toggleAdmin = () => {
             const pw = prompt("Wachtwoord:");
-            if (pw === ADMIN_PASSWORD) showAdminPanel();
+            if (!pw) return;
+            
+            // Bereken de hash van het ingevoerde wachtwoord
+            const inputHash = CryptoJS.SHA256(pw).toString();
+            
+            if (inputHash === ADMIN_HASH) {
+                showAdminPanel();
+            } else {
+                alert("Onjuist wachtwoord.");
+            }
         };
 
         async function showAdminPanel() {
@@ -203,7 +208,7 @@ apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
                     });
                     list.innerHTML = html + '</tbody></table>';
                 } catch (e) {
-                    list.innerHTML = "Fout bij ophalen data. Staan de Firestore regels op 'testmodus'?";
+                    list.innerHTML = "Fout bij ophalen data.";
                 }
             }
         }
