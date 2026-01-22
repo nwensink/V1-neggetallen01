@@ -35,6 +35,8 @@
         let score = 0;
         let questions = [];
         const TOTAL_QUESTIONS = 10;
+        
+        // Dit is de SHA256 hash voor "meester-check"
         const ADMIN_HASH = "897365636585149303d8d69784b80753086608518973a901844784b91010373e";
 
         function generateNumber(isDecimal) {
@@ -121,9 +123,6 @@
             }
         }
 
-        // --- HIER WORDEN DE FUNCTIES GEKOPPELD AAN HET WINDOW OBJECT ---
-        // Dit zorgt ervoor dat onclick="" in de HTML werkt.
-
         window.startApp = async () => {
             const nameInput = document.getElementById('nameInput').value.trim();
             if (!nameInput) return;
@@ -177,8 +176,11 @@
         window.toggleAdmin = () => {
             const pw = prompt("Wachtwoord:");
             if (!pw) return;
+            
+            // Zet om naar kleine letters en haal spaties weg voor een betrouwbare check
             const processedPw = pw.trim().toLowerCase();
             const inputHash = CryptoJS.SHA256(processedPw).toString();
+            
             if (inputHash === ADMIN_HASH) {
                 showAdminPanel();
             } else {
