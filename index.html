@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rekenen met Negatieve Getallen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <!-- Canvas Confetti Library voor de 10/10 animatie -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // VERVANG DE ONDERSTAANDE REGEL DOOR JOUW EIGEN FIREBASE CONFIG (Stap 5 van de handleiding)
+        const firebaseConfig = {
+            apiKey: "JOUW_API_KEY",
+            authDomain: "jouw-project.firebaseapp.com",
+            projectId: "jouw-project",
+            storageBucket: "jouw-project.appspot.com",
+            messagingSenderId: "12345",
+            appId: "1:12345:web:6789"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'negatieve-getallen-app';
+
+        let userName = "";
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let questions = [];
+        const TOTAL_QUESTIONS = 10;
+        const ADMIN_PASSWORD = "meester-check"; 
+
+        // Getallen genereren
+        function generateNumber(isDecimal) {
+            let num = (Math.random() * 200 - 100);
+            return isDecimal ? Math.round(num * 10) / 10 : Math.round(num);
+        }
+
+        // Vragenlijst samenstellen
+        function generateQuestions() {
+            const qs = [];
+            const decimalIndices = new Set();
+            while(decimalIndices.size < 3) {
+                decimalIndices.add(Math.floor(Math.random() * TOTAL_QUESTIONS));
+            }
+
+            for (let i = 0; i < TOTAL_QUESTIONS; i++) {
+                const isDecimal = decimalIndices.has(i);
+                let a = generateNumber(isDecimal);
+                let b = generateNumber(isDecimal);
+
+                if (a >= 0 && b >= 0) {
+                    if (Math.random() > 0.5) a = -Math.abs(a || 1);
+                    else b = -Math.abs(b || 1);
+                }
+
+                const operator = Math.random() > 0.5 ? '+' : '-';
+                const correctAnswer = operator === '+' ? a + b : a - b;
+
+                let aDisp = a.toString().replace('.', ',');
+                let bDisp = b.toString().replace('.', ',');
+                let latex = `${aDisp} ${operator} ${bDisp} = `;
+
+                qs.push({
+                    latex,
+                    answer: Math.round(correctAnswer * 10) / 10
+                });
+            }
+            return qs;
+        }
+
+        // Score opslaan in Firestore
+        async function saveScore(finalScore) {
+            try {
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'scores'), {
+                    name: userName,
+                    score: finalScore,
+                    timestamp: new Date().toISOString()
+                });
+            } catch (e) { console.error("Database fout:", e); }
+        }
+
+        window.startApp = async () => {
+            const nameInput = document.getElementById('nameInput').value.trim();
+            if (!nameInput) return;
+            userName = nameInput;
+            
+            try {
+                await signInAnonymously(auth);
+                questions = generateQuestions();
+                document.getElementById('start-screen').classList.add('hidden');
+                document.getElementById('game-screen').classList.remove('hidden');
+                showQuestion();
+            } catch (err) {
+                alert("Er is een probleem met de verbinding naar de database. Controleer je Firebase instellingen.");
+            }
+        };
+
+        function showQuestion() {
+            const q = questions[currentQuestionIndex];
+            document.getElementById('question-container').innerHTML = `<div class="text-3xl md:text-5xl">$$\\huge ${q.latex}$$</div>`;
+            MathJax.typeset();
+            
+            const input = document.getElementById('answerInput');
+            input.value = '';
+            input.disabled = false;
+            document.getElementById('feedback-overlay').classList.add('hidden');
+            document.getElementById('checkBtn').classList.remove('hidden');
+            input.focus();
+            
+            document.getElementById('progress').innerText = `Vraag ${currentQuestionIndex + 1} van ${TOTAL_QUESTIONS}`;
+        }
+
+        window.checkAnswer = () => {
+            const inputEl = document.getElementById('answerInput');
+            const userAns = parseFloat(inputEl.value.replace(',', '.'));
+            const q = questions[currentQuestionIndex];
+            const overlay = document.getElementById('feedback-overlay');
+            const statusText = document.getElementById('status-text');
+            
+            if (isNaN(userAns)) return;
+
+            inputEl.disabled = true;
+            document.getElementById('checkBtn').classList.add('hidden');
+
+            const isCorrect = Math.abs(userAns - q.answer) < 0.01;
+            if (isCorrect) {
+                score++;
+                statusText.innerText = "GOED!";
+                statusText.className = "text-4xl font-black text-green-500 animate-bounce";
+            } else {
+                statusText.innerText = "FOUT";
+                statusText.className = "text-4xl font-black text-red-500";
+            }
+
+            overlay.classList.remove('hidden');
+
+            setTimeout(() => {
+                currentQuestionIndex++;
+                if (currentQuestionIndex < TOTAL_QUESTIONS) {
+                    showQuestion();
+                } else {
+                    showResults();
+                }
+            }, 1200);
+        };
+
+        window.handleKey = (e) => {
+            if (e.key === 'Enter' && !document.getElementById('answerInput').disabled) {
+                checkAnswer();
+            }
+        };
+
+        function showResults() {
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('end-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = `${userName}, je score is ${score} / ${TOTAL_QUESTIONS}`;
+            
+            if (score === 10) {
+                confetti({
+                    particleCount: 150,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            }
+            saveScore(score);
+        }
+
+        window.toggleAdmin = () => {
+            const pw = prompt("Wachtwoord:");
+            if (pw === ADMIN_PASSWORD) showAdminPanel();
+        };
+
+        async function showAdminPanel() {
+            const panel = document.getElementById('admin-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                const list = document.getElementById('scores-list');
+                list.innerHTML = "Laden...";
+                try {
+                    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'scores'));
+                    let results = [];
+                    querySnapshot.forEach(doc => results.push(doc.data()));
+                    results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                    let html = '<table class="w-full text-left mt-2 text-xs"><thead><tr class="border-b"><th>Naam</th><th>Score</th><th>Tijd</th></tr></thead><tbody>';
+                    results.forEach(d => {
+                        html += `<tr class="border-b"><td class="py-1">${d.name}</td><td>${d.score}</td><td>${new Date(d.timestamp).toLocaleDateString()}</td></tr>`;
+                    });
+                    list.innerHTML = html + '</tbody></table>';
+                } catch (e) {
+                    list.innerHTML = "Fout bij ophalen data. Staan de Firestore regels op 'testmodus'?";
+                }
+            }
+        }
+    </script>
+    <style>
+        .card {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 95%;
+        }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body class="bg-indigo-50 min-h-screen flex flex-col items-center justify-center p-4 font-sans text-slate-800">
+
+    <div id="start-screen" class="card text-center">
+        <h1 class="text-3xl font-black mb-6 text-indigo-600">Negatieve Getallen Trainer</h1>
+        <p class="mb-6 text-slate-500">Oefen het optellen en aftrekken met negatieve getallen.</p>
+        <input type="text" id="nameInput" placeholder="Wat is je naam?" class="w-full p-4 border-2 rounded-xl mb-6 text-xl focus:border-indigo-500 outline-none text-center">
+        <button onclick="startApp()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition transform hover:scale-[1.02]">Starten</button>
+    </div>
+
+    <div id="game-screen" class="card hidden relative overflow-hidden">
+        <div id="progress" class="text-center font-bold text-indigo-400 mb-6 tracking-widest uppercase text-sm"></div>
+        <div id="question-container" class="mb-10 text-center flex items-center justify-center min-h-[120px]"></div>
+        <div class="relative max-w-md mx-auto">
+            <input type="text" inputmode="decimal" id="answerInput" onkeydown="handleKey(event)" placeholder="?" 
+                   class="w-full p-6 border-4 border-slate-100 rounded-2xl text-4xl text-center focus:border-indigo-300 outline-none transition-all">
+            <div id="feedback-overlay" class="absolute inset-0 bg-white/90 flex items-center justify-center rounded-2xl hidden">
+                <span id="status-text"></span>
+            </div>
+        </div>
+        <button id="checkBtn" onclick="checkAnswer()" class="mt-8 w-full max-w-md mx-auto block bg-slate-800 text-white py-4 rounded-xl font-bold text-lg hover:bg-slate-900 transition">Bevestig (Enter)</button>
+    </div>
+
+    <div id="end-screen" class="card text-center hidden">
+        <h2 class="text-4xl font-black mb-4">Klaar!</h2>
+        <p id="final-score" class="text-2xl mb-8 text-indigo-600 font-medium"></p>
+        <button onclick="location.reload()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition">Nog een keer</button>
+    </div>
+
+    <button onclick="toggleAdmin()" class="mt-8 text-slate-300 hover:text-slate-400 text-[10px] uppercase tracking-tighter">Beheer</button>
+    <div id="admin-panel" class="card mt-4 hidden">
+        <h3 class="font-bold border-b pb-2">Resultaten</h3>
+        <div id="scores-list" class="max-h-60 overflow-y-auto"></div>
+    </div>
+
+</body>
+</html>
