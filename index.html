@@ -8,36 +8,34 @@
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase configuratie
-        const firebaseConfig = {
-            apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
-            authDomain: "neggetallen01.firebaseapp.com",
-            projectId: "neggetallen01",
-            storageBucket: "neggetallen01.firebasestorage.app",
-            messagingSenderId: "475152363257",
-            appId: "1:475152363257:web:7f710c409e3096fc093c28",
-            measurementId: "G-7HDYB84V51"
-        };
-
+        // Initialisatie
+        const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = 'negatieve-getallen-app';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'negatieve-getallen-app';
 
         let userName = "";
         let currentQuestionIndex = 0;
         let score = 0;
         let questions = [];
         const TOTAL_QUESTIONS = 10;
-        
-        // Dit is de SHA256 hash voor "meester-check"
-        const ADMIN_HASH = "897365636585149303d8d69784b80753086608518973a901844784b91010373e";
+        const ADMIN_PASSWORD = "meester-check";
+
+        // Auth initialisatie voor Firestore toegang
+        const initAuth = async () => {
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+        };
+        initAuth();
 
         function generateNumber(isDecimal) {
             let num = (Math.random() * 200 - 100);
@@ -50,93 +48,68 @@
             while(decimalIndices.size < 3) {
                 decimalIndices.add(Math.floor(Math.random() * TOTAL_QUESTIONS));
             }
+
             for (let i = 0; i < TOTAL_QUESTIONS; i++) {
                 const isDecimal = decimalIndices.has(i);
                 let a = generateNumber(isDecimal);
                 let b = generateNumber(isDecimal);
+
                 if (a >= 0 && b >= 0) {
                     if (Math.random() > 0.5) a = -Math.abs(a || 1);
                     else b = -Math.abs(b || 1);
                 }
+
                 const operator = Math.random() > 0.5 ? '+' : '-';
                 const correctAnswer = operator === '+' ? a + b : a - b;
+
                 let aDisp = a.toString().replace('.', ',');
                 let bDisp = b.toString().replace('.', ',');
                 let latex = `${aDisp} ${operator} ${bDisp} = `;
-                qs.push({ latex, answer: Math.round(correctAnswer * 10) / 10 });
+
+                qs.push({
+                    latex,
+                    answer: Math.round(correctAnswer * 10) / 10
+                });
             }
             return qs;
         }
 
         async function saveScore(finalScore) {
+            if (!auth.currentUser) return;
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'scores'), {
                     name: userName,
                     score: finalScore,
                     timestamp: new Date().toISOString()
                 });
-            } catch (e) { console.error("Database fout:", e); }
-        }
-
-        function showQuestion() {
-            const q = questions[currentQuestionIndex];
-            document.getElementById('question-container').innerHTML = `<div class="text-3xl md:text-5xl">$$\\huge ${q.latex}$$</div>`;
-            MathJax.typeset();
-            const input = document.getElementById('answerInput');
-            input.value = '';
-            input.disabled = false;
-            document.getElementById('feedback-overlay').classList.add('hidden');
-            document.getElementById('checkBtn').classList.remove('hidden');
-            input.focus();
-            document.getElementById('progress').innerText = `Vraag ${currentQuestionIndex + 1} van ${TOTAL_QUESTIONS}`;
-        }
-
-        function showResults() {
-            document.getElementById('game-screen').classList.add('hidden');
-            document.getElementById('end-screen').classList.remove('hidden');
-            document.getElementById('final-score').innerText = `${userName}, je score is ${score} / ${TOTAL_QUESTIONS}`;
-            if (score === 10) {
-                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-            }
-            saveScore(score);
-        }
-
-        async function showAdminPanel() {
-            const panel = document.getElementById('admin-panel');
-            panel.classList.toggle('hidden');
-            if (!panel.classList.contains('hidden')) {
-                const list = document.getElementById('scores-list');
-                list.innerHTML = "Laden...";
-                try {
-                    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'scores'));
-                    let results = [];
-                    querySnapshot.forEach(doc => results.push(doc.data()));
-                    results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    let html = '<table class="w-full text-left mt-2 text-xs"><thead><tr class="border-b"><th>Naam</th><th>Score</th><th>Tijd</th></tr></thead><tbody>';
-                    results.forEach(d => {
-                        html += `<tr class="border-b"><td class="py-1">${d.name}</td><td>${d.score}</td><td>${new Date(d.timestamp).toLocaleDateString()}</td></tr>`;
-                    });
-                    list.innerHTML = html + '</tbody></table>';
-                } catch (e) {
-                    list.innerHTML = "Fout bij ophalen data.";
-                }
-            }
+            } catch (e) { console.error(e); }
         }
 
         window.startApp = async () => {
             const nameInput = document.getElementById('nameInput').value.trim();
             if (!nameInput) return;
             userName = nameInput;
-            try {
-                await signInAnonymously(auth);
-                questions = generateQuestions();
-                document.getElementById('start-screen').classList.add('hidden');
-                document.getElementById('game-screen').classList.remove('hidden');
-                showQuestion();
-            } catch (err) {
-                alert("Verbinding mislukt. Controleer internet of Firebase instellingen.");
-            }
+            
+            questions = generateQuestions();
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            showQuestion();
         };
+
+        function showQuestion() {
+            const q = questions[currentQuestionIndex];
+            document.getElementById('question-container').innerHTML = `<div class="text-3xl md:text-5xl">$$\\huge ${q.latex}$$</div>`;
+            MathJax.typeset();
+            
+            const input = document.getElementById('answerInput');
+            input.value = '';
+            input.disabled = false;
+            document.getElementById('feedback-overlay').classList.add('hidden');
+            document.getElementById('checkBtn').classList.remove('hidden');
+            input.focus();
+            
+            document.getElementById('progress').innerText = `Vraag ${currentQuestionIndex + 1} van ${TOTAL_QUESTIONS}`;
+        }
 
         window.checkAnswer = () => {
             const inputEl = document.getElementById('answerInput');
@@ -144,9 +117,12 @@
             const q = questions[currentQuestionIndex];
             const overlay = document.getElementById('feedback-overlay');
             const statusText = document.getElementById('status-text');
+            
             if (isNaN(userAns)) return;
+
             inputEl.disabled = true;
             document.getElementById('checkBtn').classList.add('hidden');
+
             const isCorrect = Math.abs(userAns - q.answer) < 0.01;
             if (isCorrect) {
                 score++;
@@ -156,7 +132,9 @@
                 statusText.innerText = "FOUT";
                 statusText.className = "text-4xl font-black text-red-500";
             }
+
             overlay.classList.remove('hidden');
+
             setTimeout(() => {
                 currentQuestionIndex++;
                 if (currentQuestionIndex < TOTAL_QUESTIONS) {
@@ -169,29 +147,67 @@
 
         window.handleKey = (e) => {
             if (e.key === 'Enter' && !document.getElementById('answerInput').disabled) {
-                window.checkAnswer();
+                checkAnswer();
             }
         };
+
+        function showResults() {
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('end-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = `${userName}, je score is ${score} / ${TOTAL_QUESTIONS}`;
+            
+            if (score === 10) {
+                confetti({
+                    particleCount: 150,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            }
+            saveScore(score);
+        }
 
         window.toggleAdmin = () => {
-            const pw = prompt("Wachtwoord:");
-            if (!pw) return;
-            
-            // Zet om naar kleine letters en haal spaties weg voor een betrouwbare check
-            const processedPw = pw.trim().toLowerCase();
-            const inputHash = CryptoJS.SHA256(processedPw).toString();
-            
-            if (inputHash === ADMIN_HASH) {
-                showAdminPanel();
-            } else {
-                alert("Onjuist wachtwoord.");
+            const pw = prompt("Wachtwoord (standaard: meester-check):");
+            if (pw !== null) {
+                // Controle ongevoelig maken voor hoofdletters en spaties aan begin/eind
+                if (pw.trim().toLowerCase() === ADMIN_PASSWORD.toLowerCase()) {
+                    showAdminPanel();
+                } else {
+                    alert("Onjuist wachtwoord. Probeer: meester-check");
+                }
             }
         };
 
-        window.restartApp = () => {
-            location.reload();
-        };
+        async function showAdminPanel() {
+            const panel = document.getElementById('admin-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                const list = document.getElementById('scores-list');
+                list.innerHTML = "<p class='p-4 text-center'>Resultaten laden...</p>";
+                
+                try {
+                    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'scores'));
+                    let results = [];
+                    querySnapshot.forEach(doc => results.push(doc.data()));
+                    
+                    if (results.length === 0) {
+                        list.innerHTML = "<p class='p-4 text-center text-slate-400'>Nog geen resultaten gevonden.</p>";
+                        return;
+                    }
 
+                    results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                    let html = '<table class="w-full text-left mt-2 text-xs border-collapse"><thead><tr class="border-b bg-slate-50"><th class="p-2">Naam</th><th class="p-2 text-center">Score</th><th class="p-2">Datum</th></tr></thead><tbody>';
+                    results.forEach(d => {
+                        const date = new Date(d.timestamp).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        html += `<tr class="border-b hover:bg-slate-50"><td class="p-2 font-medium">${d.name}</td><td class="p-2 text-center">${d.score}/10</td><td class="p-2 text-slate-500">${date}</td></tr>`;
+                    });
+                    list.innerHTML = html + '</tbody></table>';
+                } catch (err) {
+                    list.innerHTML = `<p class="p-4 text-red-500 text-center">Fout bij laden: ${err.message}</p>`;
+                }
+            }
+        }
     </script>
     <style>
         .card {
@@ -203,6 +219,11 @@
             width: 95%;
         }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        /* Custom scrollbar voor admin lijst */
+        #scores-list::-webkit-scrollbar { width: 6px; }
+        #scores-list::-webkit-scrollbar-track { background: #f1f1f1; }
+        #scores-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-indigo-50 min-h-screen flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -214,11 +235,11 @@
         <button onclick="startApp()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition transform hover:scale-[1.02]">Starten</button>
     </div>
 
-    <div id="game-screen" class="card hidden relative overflow-hidden">
-        <div id="progress" class="text-center font-bold text-indigo-400 mb-6 tracking-widest uppercase text-sm"></div>
-        <div id="question-container" class="mb-10 text-center flex items-center justify-center min-h-[120px]"></div>
+    <div id="game-screen" class="card hidden relative overflow-hidden text-center">
+        <div id="progress" class="font-bold text-indigo-400 mb-6 tracking-widest uppercase text-sm"></div>
+        <div id="question-container" class="mb-10 flex items-center justify-center min-h-[120px]"></div>
         <div class="relative max-w-md mx-auto">
-            <input type="text" id="answerInput" onkeydown="handleKey(event)" placeholder="?" 
+            <input type="text" inputmode="decimal" id="answerInput" onkeydown="handleKey(event)" placeholder="?" 
                    class="w-full p-6 border-4 border-slate-100 rounded-2xl text-4xl text-center focus:border-indigo-300 outline-none transition-all">
             <div id="feedback-overlay" class="absolute inset-0 bg-white/90 flex items-center justify-center rounded-2xl hidden">
                 <span id="status-text"></span>
@@ -230,13 +251,22 @@
     <div id="end-screen" class="card text-center hidden">
         <h2 class="text-4xl font-black mb-4">Klaar!</h2>
         <p id="final-score" class="text-2xl mb-8 text-indigo-600 font-medium"></p>
-        <button onclick="restartApp()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition">Nog een keer</button>
+        <button onclick="location.reload()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition">Nog een keer</button>
     </div>
 
-    <button onclick="toggleAdmin()" class="mt-8 text-slate-300 hover:text-slate-400 text-[10px] uppercase tracking-tighter">Beheer</button>
-    <div id="admin-panel" class="card mt-4 hidden">
-        <h3 class="font-bold border-b pb-2">Resultaten</h3>
-        <div id="scores-list" class="max-h-60 overflow-y-auto"></div>
+    <!-- Beheer Sectie -->
+    <div class="mt-8 flex flex-col items-center w-full max-w-2xl">
+        <button onclick="toggleAdmin()" class="text-slate-300 hover:text-indigo-400 text-[10px] uppercase tracking-tighter transition-colors mb-4">Beheer</button>
+        
+        <div id="admin-panel" class="card hidden w-full !p-6">
+            <div class="flex justify-between items-center border-b pb-4 mb-2">
+                <h3 class="font-black text-indigo-600 uppercase tracking-wide">Resultatenoverzicht</h3>
+                <button onclick="document.getElementById('admin-panel').classList.add('hidden')" class="text-slate-400 hover:text-red-500 font-bold px-2">&times;</button>
+            </div>
+            <div id="scores-list" class="max-h-80 overflow-y-auto rounded-lg border border-slate-100">
+                <!-- Resultaten tabel -->
+            </div>
+        </div>
     </div>
 
 </body>
