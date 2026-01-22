@@ -24,21 +24,29 @@
         let currentQuestionIndex = 0;
         let score = 0;
         let questions = [];
+        let isAuthInitializing = false;
         const TOTAL_QUESTIONS = 10;
         const ADMIN_PASSWORD = "meester-check";
 
-        // Authenticatie initialisatie
+        // Authenticatie initialisatie met betere foutafhandeling
         const initAuth = async () => {
+            if (isAuthInitializing) return;
+            isAuthInitializing = true;
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
                     await signInAnonymously(auth);
                 }
+                console.log("Auth succesvol");
             } catch (err) {
                 console.error("Auth init error:", err);
+            } finally {
+                isAuthInitializing = false;
             }
         };
+
+        // Start direct met auth laden
         initAuth();
 
         // Functie om een getal te genereren (geheel of decimaal)
@@ -60,7 +68,6 @@
                 let a = generateNumber(isDecimal);
                 let b = generateNumber(isDecimal);
 
-                // Zorg dat er minstens één negatief getal in de som zit
                 if (a >= 0 && b >= 0) {
                     if (Math.random() > 0.5) a = -Math.abs(a || 1);
                     else b = -Math.abs(b || 1);
@@ -81,7 +88,7 @@
             return qs;
         }
 
-        // Score opslaan in Firestore
+        // Score opslaan
         async function saveScore(finalScore) {
             if (!auth.currentUser) return;
             try {
@@ -93,16 +100,23 @@
             } catch (e) { console.error(e); }
         }
 
-        // Start het spel
+        // De startfunctie is nu robuuster
         window.startApp = async () => {
-            const nameInput = document.getElementById('nameInput').value.trim();
-            if (!nameInput) {
+            console.log("Startknop geklikt");
+            const nameInput = document.getElementById('nameInput');
+            const nameValue = nameInput.value.trim();
+            
+            if (!nameValue) {
                 alert("Vul eerst je naam in.");
                 return;
             }
-            userName = nameInput;
             
-            // Controleer of we ingelogd zijn, zo niet, probeer het nogmaals
+            userName = nameValue;
+            const startBtn = document.querySelector('#start-screen button');
+            startBtn.disabled = true;
+            startBtn.innerText = "Laden...";
+
+            // Zorg dat auth klaar is
             if (!auth.currentUser) {
                 await initAuth();
             }
@@ -113,11 +127,12 @@
             showQuestion();
         };
 
-        // Toon een vraag
         function showQuestion() {
             const q = questions[currentQuestionIndex];
             document.getElementById('question-container').innerHTML = `<div class="text-3xl md:text-5xl">$$\\huge ${q.latex}$$</div>`;
-            MathJax.typeset();
+            if (window.MathJax) {
+                MathJax.typesetPromise();
+            }
             
             const input = document.getElementById('answerInput');
             input.value = '';
@@ -129,16 +144,16 @@
             document.getElementById('progress').innerText = `Vraag ${currentQuestionIndex + 1} van ${TOTAL_QUESTIONS}`;
         }
 
-        // Controleer het antwoord
         window.checkAnswer = () => {
             const inputEl = document.getElementById('answerInput');
-            const userAns = parseFloat(inputEl.value.replace(',', '.'));
+            const val = inputEl.value.replace(',', '.');
+            if (val === "" || isNaN(parseFloat(val))) return;
+            
+            const userAns = parseFloat(val);
             const q = questions[currentQuestionIndex];
             const overlay = document.getElementById('feedback-overlay');
             const statusText = document.getElementById('status-text');
             
-            if (isNaN(userAns)) return;
-
             inputEl.disabled = true;
             document.getElementById('checkBtn').classList.add('hidden');
 
@@ -154,7 +169,6 @@
 
             overlay.classList.remove('hidden');
 
-            // Automatisch door naar de volgende vraag na 1.2 seconden
             setTimeout(() => {
                 currentQuestionIndex++;
                 if (currentQuestionIndex < TOTAL_QUESTIONS) {
@@ -171,7 +185,6 @@
             }
         };
 
-        // Eindscherm tonen
         function showResults() {
             document.getElementById('game-screen').classList.add('hidden');
             document.getElementById('end-screen').classList.remove('hidden');
@@ -187,7 +200,6 @@
             saveScore(score);
         }
 
-        // Beheerpaneel logica
         window.toggleAdmin = () => {
             const pw = prompt("Wachtwoord:");
             if (pw === ADMIN_PASSWORD) {
@@ -216,8 +228,7 @@
                     });
                     list.innerHTML = html + '</tbody></table>';
                 } catch (e) {
-                    list.innerHTML = "Fout bij laden van gegevens.";
-                    console.error(e);
+                    list.innerHTML = "Fout bij laden.";
                 }
             }
         }
@@ -236,7 +247,6 @@
 </head>
 <body class="bg-indigo-50 min-h-screen flex flex-col items-center justify-center p-4 font-sans text-slate-800">
 
-    <!-- Startscherm -->
     <div id="start-screen" class="card text-center">
         <h1 class="text-3xl font-black mb-6 text-indigo-600">Negatieve Getallen Trainer</h1>
         <p class="mb-6 text-slate-500 text-lg">Oefen het rekenen met negatieve en decimale getallen.</p>
@@ -244,7 +254,6 @@
         <button onclick="startApp()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition transform hover:scale-[1.02]">Starten</button>
     </div>
 
-    <!-- Spelscherm -->
     <div id="game-screen" class="card hidden relative overflow-hidden">
         <div id="progress" class="text-center font-bold text-indigo-400 mb-6 tracking-widest uppercase text-sm"></div>
         <div id="question-container" class="mb-10 text-center flex items-center justify-center min-h-[120px]"></div>
@@ -258,14 +267,12 @@
         <button id="checkBtn" onclick="checkAnswer()" class="mt-8 w-full max-w-md mx-auto block bg-slate-800 text-white py-4 rounded-xl font-bold text-lg hover:bg-slate-900 transition">Bevestig (Enter)</button>
     </div>
 
-    <!-- Eindscherm -->
     <div id="end-screen" class="card text-center hidden">
         <h2 class="text-4xl font-black mb-4">Klaar!</h2>
         <p id="final-score" class="text-2xl mb-8 text-indigo-600 font-medium"></p>
         <button onclick="location.reload()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-xl hover:bg-indigo-700 transition">Nog een keer</button>
     </div>
 
-    <!-- Beheersectie -->
     <button onclick="toggleAdmin()" class="mt-8 text-slate-300 hover:text-slate-400 text-[10px] uppercase tracking-tighter transition-colors">Beheer</button>
     <div id="admin-panel" class="card mt-4 hidden">
         <h3 class="font-bold border-b pb-2">Resultaten</h3>
