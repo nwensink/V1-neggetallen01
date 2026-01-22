@@ -15,21 +15,15 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // VERVANG DE ONDERSTAANDE REGEL DOOR JOUW EIGEN FIREBASE CONFIG
+        // Firebase configuratie
         const firebaseConfig = {
-           apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
-
-  authDomain: "neggetallen01.firebaseapp.com",
-
-  projectId: "neggetallen01",
-
-  storageBucket: "neggetallen01.firebasestorage.app",
-
-  messagingSenderId: "475152363257",
-
-  appId: "1:475152363257:web:7f710c409e3096fc093c28",
-
-  measurementId: "G-7HDYB84V51"
+            apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
+            authDomain: "neggetallen01.firebaseapp.com",
+            projectId: "neggetallen01",
+            storageBucket: "neggetallen01.firebasestorage.app",
+            messagingSenderId: "475152363257",
+            appId: "1:475152363257:web:7f710c409e3096fc093c28",
+            measurementId: "G-7HDYB84V51"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -43,8 +37,8 @@
         let questions = [];
         const TOTAL_QUESTIONS = 10;
 
-        // De SHA256 vingerafdruk van het wachtwoord 
-        // Zelfs als iemand dit ziet, weten ze niet wat het echte wachtwoord is.
+        // De SHA256 vingerafdruk van het wachtwoord "meester-check"
+        // Dit is de exacte hash voor die tekst.
         const ADMIN_HASH = "897365636585149303d8d69784b80753086608518973a901844784b91010373e";
 
         function generateNumber(isDecimal) {
@@ -180,8 +174,9 @@
             const pw = prompt("Wachtwoord:");
             if (!pw) return;
             
-            // Bereken de hash van het ingevoerde wachtwoord
-            const inputHash = CryptoJS.SHA256(pw).toString();
+            // Verwijder eventuele spaties aan het begin of eind van de invoer
+            const trimmedPw = pw.trim();
+            const inputHash = CryptoJS.SHA256(trimmedPw).toString();
             
             if (inputHash === ADMIN_HASH) {
                 showAdminPanel();
@@ -260,5 +255,4 @@
     </div>
 
 </body>
-
 </html>
