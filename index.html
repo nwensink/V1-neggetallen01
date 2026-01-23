@@ -13,12 +13,44 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase configuratie
-        const firebaseConfig = JSON.parse(__firebase_config);
+        /**
+         * BELANGRIJK VOOR GITHUB:
+         * De variabelen __firebase_config en __app_id werken alleen binnen deze omgeving.
+         * Om de app op GitHub te laten werken, moet je hieronder je eigen Firebase gegevens invullen.
+         */
+        
+        let firebaseConfig;
+        let appId;
+
+        try {
+            // Probeer eerst de omgevingsvariabelen (voor Canvas)
+            firebaseConfig = JSON.parse(__firebase_config);
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'negatieve-getallen-app';
+        } catch (e) {
+            // FALLBACK VOOR GITHUB:
+            // Vul hieronder je eigen gegevens in die je van Firebase krijgt:
+            firebaseConfig = {
+      apiKey: "AIzaSyBXSOveWMEcrE-vGf9FreT4rF-pmw6d9Ak",
+
+  authDomain: "neggetallen01.firebaseapp.com",
+
+  projectId: "neggetallen01",
+
+  storageBucket: "neggetallen01.firebasestorage.app",
+
+  messagingSenderId: "475152363257",
+
+  appId: "1:475152363257:web:a3f24114082f10bc093c28",
+
+  measurementId: "G-Z3WL6F9VTV"
+            };
+            appId = "negatieve-getallen-app";
+            console.log("Gebruik handmatige configuratie voor GitHub");
+        }
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'negatieve-getallen-app';
 
         let userName = "";
         let currentQuestionIndex = 0;
@@ -37,7 +69,7 @@
                 }
                 console.log("Database verbinding gereed");
             } catch (err) {
-                console.warn("Database verbinding vertraagd, maar spel kan doorgaan.");
+                console.warn("Database verbinding vertraagd of handmatige config nodig.");
             }
         };
 
@@ -83,6 +115,7 @@
         async function saveScore(finalScore) {
             if (!auth.currentUser) return;
             try {
+                // Let op de pad-structuur voor Firebase regels
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'scores'), {
                     name: userName,
                     score: finalScore,
@@ -91,7 +124,6 @@
             } catch (e) { console.error(e); }
         }
 
-        // Verbeterde startApp die ALTIJD doorgaat naar de vragen
         window.startApp = () => {
             const nameInput = document.getElementById('nameInput');
             const nameValue = nameInput.value.trim();
@@ -102,8 +134,6 @@
             }
             
             userName = nameValue;
-            
-            // Genereer vragen en wissel scherm (geen 'await' op database)
             questions = generateQuestions();
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
